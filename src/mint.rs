@@ -153,7 +153,6 @@ impl Mint {
         let mut random_bytes = [0u8; Sha256::LEN];
         rng.fill_bytes(&mut random_bytes);
         let hash = Sha256::hash(&random_bytes);
-
         self.pending_invoices
             .insert(hash, (amount, invoice.clone()));
 
@@ -174,9 +173,10 @@ impl Mint {
         hash: Sha256,
         mint_request: wallet::MintRequest,
     ) -> Result<MintResponse, Error> {
-        let Some((amount, _invoice)) = self.paid_invoices.get(&hash) else {
-            return Err(Error::PaymentHash);
-        };
+        let (amount, _invoice) = self.paid_invoices.get(&hash).unwrap();
+        // let Some((amount, _invoice)) = self.paid_invoices.get(&hash) else {
+        //     return Err(Error::PaymentHash);
+        // };
 
         // Check for amount mismatch
         if mint_request.total_amount() != *amount {
@@ -202,11 +202,8 @@ impl Mint {
         let secp = Secp256k1::new();
 
         let BlindedMessage { amount, b } = blinded_message;
-
-        let Some(key_pair) = self.active_keyset.get(*amount) else {
-            // No key for amount
-            return Err(Error::AmountKey);
-        };
+     
+        let key_pair = self.active_keyset.get(*amount).unwrap();
 
         let scalar = Scalar::from(key_pair.secret_key());
 
@@ -300,9 +297,7 @@ impl Mint {
             },
         );
 
-        let Some(keypair) = keyset.get(*amount) else {
-            return Err(Error::AmountKey);
-        };
+        let keypair = keyset.get(*amount).unwrap();
 
         let k = keypair.secret_key();
         let y = ecash::hash_to_curve(secret.as_bytes());

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use crate::Amount;
 
 /// Mapping of Amount -> PublicKey
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(transparent)]
 pub struct Map(BTreeMap<Amount, PublicKey>);
 
@@ -262,6 +262,50 @@ pub mod mint {
 
             for i in 0..max_order {
                 let amount = Amount::from(2_u64.pow(i as u32));
+                // Reuse midstate
+                let mut e = engine.clone();
+                e.input(i.to_string().as_bytes());
+                let hash = Sha256::from_engine(e);
+                let secret_key = SecretKey::from(hash);
+                let keypair = KeyPair::from_secret_key(&secp, &secret_key);
+                map.insert(amount, keypair);
+            }
+
+            let map = Map(map);
+
+            let public_map = super::Map::from(&map);
+
+            Self {
+                id: Id::from(&public_map),
+                keys: map,
+            }
+        }
+
+        pub fn generate_by_amounts(
+            secret: impl Into<String>,
+            derivation_path: impl Into<String>,
+            amounts: Vec<u64>,
+        ) -> Self {
+            use bitcoin::hashes::sha256::Hash as Sha256;
+            use bitcoin::hashes::Hash;
+
+            // Elliptic curve math context
+            let secp = bitcoin::secp256k1::Secp256k1::new();
+
+            /* NUT-02 § 2.1
+                for i in range(MAX_ORDER):
+                    k_i = HASH_SHA256(s + D + i)[:32]
+            */
+
+            let mut map = HashMap::with_capacity(amounts.len());
+
+            // SHA-256 midstate, for quicker hashing
+            let mut engine = Sha256::engine();
+            engine.input(secret.into().as_bytes());
+            engine.input(derivation_path.into().as_bytes());
+
+            for i in amounts {
+                let amount = Amount::from(i);
                 // Reuse midstate
                 let mut e = engine.clone();
                 e.input(i.to_string().as_bytes());

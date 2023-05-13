@@ -91,10 +91,11 @@ impl Wallet {
                 },
             );
 
-            let Some(k) = keyset.get(amount) else {
-                // Missing amount from keyset
-                continue; // TODO
-            };
+            let k = keyset.get(amount).unwrap();
+            // let Some(k) = keyset.get(amount) else {
+            //     // Missing amount from keyset
+            //     continue; // TODO
+            // };
 
             let rk = k
                 .mul_tweak(&secp, &Scalar::from(blinding_factor))
@@ -296,6 +297,33 @@ impl PreMintSecrets {
         Self { secrets: output }
     }
 
+    pub fn by_subamount(subamounts: Vec<Amount>) -> Self {
+        let secp = Secp256k1::new();
+        let mut rng = rand::thread_rng();
+        let n = subamounts.len();
+        let mut output = Vec::with_capacity(n);
+
+        for (amount, secret) in subamounts.into_iter().zip(Secret::generate(n).into_iter()) {
+            // Get a curve point from the hash of the secret (Y)
+            let y = ecash::hash_to_curve(secret.as_bytes());
+            // The blinding factor is a random secret key (r)
+            let (blinding_factor, _) = secp.generate_keypair(&mut rng);
+            // Compute the blinded key: B_ = Y + rG
+            let blinded_key = y
+                .add_exp_tweak(&secp, &Scalar::from(blinding_factor))
+                .expect("EC math");
+
+            output.push(PreMint {
+                amount,
+                blinded_key,
+                blinding_factor,
+                secret,
+            });
+        }
+
+        Self { secrets: output }
+    }
+
     fn iter(&self) -> impl Iterator<Item = &PreMint> {
         self.secrets.iter()
     }
@@ -316,7 +344,7 @@ impl PreMintSecrets {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MintRequest {
     pub outputs: Vec<ecash::BlindedMessage>,
 }
